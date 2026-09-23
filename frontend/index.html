@@ -177,13 +177,26 @@ async function participants(){
         </div></div>`).join('')
         || '<div class="empty">Пока никто не отметился</div>'}
     </div>`;
-  showFoot(`<button class="primary" onclick="recordScreen()">Начать запись</button>`);
+  showFoot(`<button class="primary" onclick="recordScreen()">Записывать на этом устройстве</button>
+            <button onclick="finishTracks()">Собрать совещание из дорожек участников</button>`);
   clearInterval(S.qrTimer);
   S.qrTimer = setInterval(async ()=>{
     const box = document.getElementById('qrbox');
     if(!box){ clearInterval(S.qrTimer); return; }
     box.innerHTML = await fetch(`/api/meetings/${S.meetingId}/qr.svg?_=`+Date.now()).then(r=>r.text());
   }, 100000);
+}
+
+async function finishTracks(){
+  processing('Готовлю звук');
+  const r = await fetch(`/api/meetings/${S.meetingId}/process`, {method:'POST'});
+  if(!r.ok){
+    const d = await r.json().catch(()=>({detail:'нет дорожек'}));
+    el.innerHTML = `<h2>Пока нечего собирать</h2><div class="sub">${d.detail}</div>
+      <button onclick="participants()">Назад к участникам</button>`;
+    return;
+  }
+  poll();
 }
 
 async function removePerson(id){

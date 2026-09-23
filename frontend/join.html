@@ -33,6 +33,14 @@
   <input id="pos" placeholder="Должность">
   <button onclick="join()">Я участвую</button>
   <div class="msg" id="msg"></div>
+  <div id="recbox" hidden>
+    <div class="note" style="border:none;padding:0;margin:18px 0 12px">
+      Ваш телефон запишет только ваш голос. Так система не перепутает вас
+      с другими участниками, и вас будет слышно, где бы вы ни сидели.
+    </div>
+    <button id="recbtn" onclick="toggleRec()">Начать запись</button>
+    <div class="msg" id="recmsg"></div>
+  </div>
   <div class="note">Запись остаётся на сервере компании и не передаётся
     в сторонние сервисы.</div>
 </div>
@@ -50,11 +58,48 @@ async function join(){
     msg.className='msg ok';
     msg.textContent='Готово. Вы в списке участников';
     document.querySelector('button').disabled = true;
+    window.myName = name;
+    document.getElementById('recbox').hidden = false;
   } else {
     const d = await r.json().catch(()=>({detail:'не получилось'}));
     msg.className='msg err';
     msg.textContent = d.detail || 'не получилось отметиться';
   }
+}
+
+let rec = null, chunks = [], startedAt = 0;
+
+async function toggleRec(){
+  const btn = document.getElementById('recbtn');
+  const msg = document.getElementById('recmsg');
+  if (rec && rec.state === 'recording'){
+    rec.stop();
+    btn.textContent = 'Отправляю…';
+    btn.disabled = true;
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  rec = new MediaRecorder(stream);
+  chunks = [];
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const fd = new FormData();
+    fd.append('file', new Blob(chunks, {type:'audio/webm'}), 'track.webm');
+    fd.append('speaker', window.myName || 'Участник');
+    fd.append('offset', '0');
+    const r = await fetch(`/api/meetings/${id}/tracks`, {method:'POST', body: fd});
+    const d = await r.json();
+    msg.className = 'msg ok';
+    msg.textContent = `Дорожка отправлена. Всего дорожек: ${d.tracks}`;
+    document.getElementById('recbtn').textContent = 'Записать ещё раз';
+    document.getElementById('recbtn').disabled = false;
+  };
+  rec.start();
+  startedAt = Date.now();
+  btn.textContent = 'Остановить и отправить';
+  msg.className = 'msg';
+  msg.innerHTML = '<span style="color:#c0453f">● идёт запись вашего голоса</span>';
 }
 </script>
 </body>

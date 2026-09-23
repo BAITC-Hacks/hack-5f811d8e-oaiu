@@ -62,6 +62,10 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 meeting_id INTEGER, name TEXT, position TEXT, joined_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id INTEGER, speaker TEXT, path TEXT, offset_sec REAL
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 meeting_id INTEGER, text TEXT, assignee TEXT, author TEXT,
@@ -184,6 +188,61 @@ def create_draft(title: str = "Совещание"):
     return {"id": cur.lastrowid}
 
 
+def process_meeting_tracks(meeting_id: int, tracks: list[dict]):
+    """Каждая дорожка распознаётся отдельно, затем реплики склеиваются по времени.
+
+    Звук не смешивается: смешивание складывает шумы и не делает дальний голос
+    громче. Склеивается текст, а имя говорящего берётся из владельца дорожки.
+    """
+    try:
+        people = [t["speaker"] for t in tracks]
+        merged: list[dict] = []
+        for t in tracks:
+            segs = asr.transcribe(t["path"], known_names=people)
+            for seg in segs:
+                seg["start"] += t["offset_sec"]
+                seg["end"] += t["offset_sec"]
+                seg["speaker"] = t["speaker"]
+                seg["speaker_id"] = t["speaker"]
+                seg["loudness"] = asr.segment_loudness(t["path"], seg["start"] - t["offset_sec"],
+                                                       seg["end"] - t["offset_sec"])
+            merged.extend(segs)
+
+        merged = asr.drop_crosstalk(merged)
+        merged.sort(key=lambda s: s["start"])
+
+        text = asr.to_text(merged)
+        with db() as conn:
+            conn.execute(
+                "UPDATE meetings SET transcript=?, status=? WHERE id=?",
+                (json.dumps(merged, ensure_ascii=False), "разбираю поручения", meeting_id),
+            )
+
+        title = tasks_extractor.make_title(text)
+        if title:
+            with db() as conn:
+                conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+
+        found = tasks_extractor.extract_tasks(text, known_names=people)
+        found = dates_mod.enrich(found, date.today())
+        with db() as conn:
+            for t in found:
+                conn.execute(
+                    """INSERT INTO tasks
+                       (meeting_id, text, assignee, author, deadline_raw, deadline,
+                        deadline_rule, quote, status)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (meeting_id, t["text"], t["assignee"], t.get("author", ""),
+                     t["deadline_raw"], t.get("deadline"), t.get("deadline_rule", ""),
+                     t["quote"], t["status"]),
+                )
+            conn.execute("UPDATE meetings SET status=? WHERE id=?", ("готово", meeting_id))
+    except Exception as e:
+        with db() as conn:
+            conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                         (f"ошибка: {e}", meeting_id))
+
+
 @app.post("/api/meetings")
 async def upload_meeting(file: UploadFile = File(...), title: str = "Совещание",
                          meeting_id: int | None = Form(None)):
@@ -208,6 +267,44 @@ async def upload_meeting(file: UploadFile = File(...), title: str = "Совещ�
 
     threading.Thread(target=process_meeting, args=(meeting_id, str(dest)), daemon=True).start()
     return {"id": meeting_id, "status": "распознаю речь"}
+
+
+@app.post("/api/meetings/{meeting_id}/tracks")
+async def upload_track(meeting_id: int, file: UploadFile = File(...),
+                       speaker: str = Form(...), offset: float = Form(0.0)):
+    """Дорожка одного участника. Каждый телефон пишет своего владельца:
+    микрофон рядом с говорящим, поэтому его речь записана лучше всех."""
+    suffix = Path(file.filename or "track.webm").suffix or ".webm"
+    dest = DATA / f"track_{meeting_id}_{datetime.now():%H%M%S%f}{suffix}"
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO tracks (meeting_id, speaker, path, offset_sec) VALUES (?,?,?,?)",
+            (meeting_id, speaker.strip(), str(dest), offset),
+        )
+        n = conn.execute("SELECT COUNT(*) c FROM tracks WHERE meeting_id=?",
+                         (meeting_id,)).fetchone()["c"]
+    return {"ok": True, "tracks": n}
+
+
+@app.post("/api/meetings/{meeting_id}/process")
+def process_tracks(meeting_id: int):
+    """Разбор совещания, записанного несколькими телефонами."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT speaker, path, offset_sec FROM tracks WHERE meeting_id=?",
+            (meeting_id,),
+        ).fetchall()
+    if not rows:
+        raise HTTPException(400, "дорожек нет")
+    with db() as conn:
+        conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                     ("распознаю речь", meeting_id))
+    tracks = [dict(r) for r in rows]
+    threading.Thread(target=process_meeting_tracks, args=(meeting_id, tracks),
+                     daemon=True).start()
+    return {"ok": True, "tracks": len(tracks)}
 
 
 @app.get("/api/meetings")

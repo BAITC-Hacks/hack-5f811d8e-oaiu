@@ -79,6 +79,29 @@
          align-items:center;font-size:14px;line-height:1.45}
   .wave{color:var(--accent);display:flex;align-items:center}
 
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .fact{border:1px solid var(--line);border-radius:12px;padding:22px}
+  .fact b{display:block;font-size:30px;color:var(--accent);letter-spacing:-.02em;margin-bottom:6px}
+  .fact span{color:var(--muted);font-size:14px}
+  .roles{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .role{border:1px solid var(--line);border-radius:12px;padding:22px}
+  .role h3{margin:0 0 4px;font-size:16px}
+  .role .who{color:var(--accent);font-size:13px;margin-bottom:10px}
+  .role p{margin:0;color:var(--muted);font-size:14px}
+  .list{margin:0;padding:0;list-style:none}
+  .list li{padding:11px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
+  .list li:last-child{border:none}
+  .list b{color:var(--text);font-weight:600}
+  .faq details{border-bottom:1px solid var(--line);padding:14px 0}
+  .faq summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::before{content:"+";color:var(--accent);margin-right:10px;font-weight:700}
+  .faq details[open] summary::before{content:"−"}
+  .faq p{color:var(--muted);font-size:14px;margin:10px 0 0 22px}
+  .cta{background:var(--soft);border:1px solid #e8ecf1;border-radius:12px;padding:34px;
+       text-align:center}
+  .cta h2{margin-bottom:8px}
+  .cta p{color:var(--muted);margin:0 0 22px}
   footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:13px}
   .frow{display:flex;align-items:center;gap:14px}
   .frow .logo{font-size:16px;color:var(--text)}
@@ -87,7 +110,7 @@
   @media(max-width:860px){
     .hero{grid-template-columns:1fr;gap:36px;padding:40px 0}
     h1{font-size:34px}
-    .steps,.two{grid-template-columns:1fr}
+    .steps,.two,.facts,.roles{grid-template-columns:1fr}
     .arrow{text-align:center;padding:0}
     .arrow::after{content:"↓"}
     .arrow{font-size:0}
@@ -179,6 +202,104 @@
     </div>
   </section>
 
+
+  <section>
+    <h2>Что происходит сейчас</h2>
+    <div class="facts">
+      <div class="fact"><b>2–3 часа</b><span>уходит у секретаря на оформление
+        протокола после каждой встречи</span></div>
+      <div class="fact"><b>Часть теряется</b><span>поручения звучат устно,
+        в записи оказываются не все и не полностью</span></div>
+      <div class="fact"><b>Нечего проверять</b><span>через неделю никто не помнит,
+        кому что поручили и к какому сроку</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Что получает каждый</h2>
+    <div class="roles">
+      <div class="role">
+        <h3>Протокол без ручной работы</h3>
+        <div class="who">Секретарь</div>
+        <p>Документ собирается сам: участники, содержание, таблица поручений.
+           Остаётся проверить и отправить.</p>
+      </div>
+      <div class="role">
+        <h3>Видно, что выполняется</h3>
+        <div class="who">Руководитель</div>
+        <p>Поручения со сроками и статусами. Просроченные отмечаются сами,
+           без напоминаний и сверок.</p>
+      </div>
+      <div class="role">
+        <h3>Задача приходит сразу</h3>
+        <div class="who">Исполнитель</div>
+        <p>Своё поручение с цитатой из совещания и сроком. Не нужно
+           перечитывать весь протокол.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="two">
+    <div class="card">
+      <h2>Почему на своём сервере</h2>
+      <ul class="list">
+        <li><b>Записи не уходят наружу.</b> Совещание правления, показатели,
+          подрядчики, инциденты. Такое не отправляют в чужое облако.</li>
+        <li><b>Работает без интернета.</b> После установки система не обращается
+          в сеть вообще. Можно проверить, отключив Wi-Fi.</li>
+        <li><b>Данные остаются в периметре.</b> Требование служб безопасности
+          в госкомпаниях и банках.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Что внутри</h2>
+      <ul class="list">
+        <li><b>Распознавание речи</b> локальной моделью на видеоядре сервера</li>
+        <li><b>Разбор поручений</b> локальной языковой моделью, без внешних сервисов</li>
+        <li><b>Сроки в даты</b> отдельным алгоритмом, а не моделью: правило
+          одинаково каждый раз и его видно рядом с датой</li>
+        <li><b>Цитата у каждого поручения</b> — видно, из каких слов оно взялось</li>
+      </ul>
+    </div>
+  </section>
+
+
+  <section>
+    <div class="card soft">
+      <h2>Каждое совещание это комната</h2>
+      <div class="roles" style="margin-bottom:20px">
+        <div class="role" style="background:#fff">
+          <h3>Участники входят в комнату</h3>
+          <div class="who">Шаг 1</div>
+          <p>Ведущий открывает совещание, на экране появляется QR. Каждый сканирует
+             его своим телефоном и указывает имя. Система знает, кто в комнате.</p>
+        </div>
+        <div class="role" style="background:#fff">
+          <h3>Каждый пишет свой голос</h3>
+          <div class="who">Шаг 2</div>
+          <p>Телефон участника записывает его собственную дорожку. Микрофон
+             в полуметре от говорящего, а не в пяти метрах через весь стол.</p>
+        </div>
+        <div class="role" style="background:#fff">
+          <h3>Реплики собираются по времени</h3>
+          <div class="who">Шаг 3</div>
+          <p>Дорожки не смешиваются в один звук. Каждая распознаётся отдельно,
+             реплики выстраиваются по времени в общую стенограмму.</p>
+        </div>
+      </div>
+      <ul class="list">
+        <li><b>Никого не перепутают.</b> Имя реплики определяется дорожкой,
+          а не догадкой по голосу. Двух похожих голосов система не спутает.</li>
+        <li><b>Дальних слышно так же, как ближних.</b> У каждого свой микрофон,
+          поэтому расстояние до центра стола перестаёт иметь значение.</li>
+        <li><b>Одна реплика не задваивается.</b> Голос слышат все телефоны,
+          поэтому из нескольких версий берётся та дорожка, где он громче всего.</li>
+        <li><b>Кто молчал, тот молчал.</b> Участнику не припишут чужие слова.</li>
+      </ul>
+    </div>
+  </section>
+
   <section class="two">
     <div class="card" id="compare">
       <h2>Сравнение с облачными сервисами</h2>
@@ -201,6 +322,57 @@
         <span class="wave"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg></span>
         <span>«Бұл мәселе бойынша<br>до конца недели справка керек»</span>
       </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Что дальше</h2>
+    <div class="roles">
+      <div class="role">
+        <h3>Личный кабинет</h3>
+        <div class="who">Ближайшее</div>
+        <p>Поручение приходит исполнителю сразу после совещания. Напоминание
+           за день до срока и в день просрочки.</p>
+      </div>
+      <div class="role">
+        <h3>Сводный экран руководителя</h3>
+        <div class="who">Ближайшее</div>
+        <p>Все поручения со всех совещаний в одном списке, с фильтрами по людям
+           и по просрочкам.</p>
+      </div>
+      <div class="role">
+        <h3>Своё устройство записи</h3>
+        <div class="who">Полтора месяца</div>
+        <p>Плата размером с карту крепится к телефону. Микрофоны по периметру
+           и видимый индикатор записи.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq">
+    <h2>Частые вопросы</h2>
+    <details><summary>Нужен ли интернет</summary>
+      <p>Только при первой установке, чтобы скачать модели. Дальше система
+         работает полностью офлайн.</p></details>
+    <details><summary>Что с казахским языком</summary>
+      <p>Система понимает русский, казахский и смешанную речь, когда языки
+         переключаются внутри одной фразы.</p></details>
+    <details><summary>А если система ошиблась в поручении</summary>
+      <p>Любое поручение можно поправить руками: ответственного, срок, текст.
+         Рядом показана цитата из совещания, по которой видно, откуда оно взялось.</p></details>
+    <details><summary>Кто слышит запись</summary>
+      <p>Запись остаётся на сервере компании. Участники видят, что идёт запись,
+         и отмечаются перед началом совещания.</p></details>
+    <details><summary>Где это ставится</summary>
+      <p>На сервер внутри компании. Сотрудники работают через браузер
+         с компьютера или телефона.</p></details>
+  </section>
+
+  <section>
+    <div class="cta">
+      <h2>Посмотрите, как это работает</h2>
+      <p>Загрузите запись совещания и получите протокол с поручениями</p>
+      <a class="btn lg" href="/app">Попробовать</a>
     </div>
   </section>
 </div>

@@ -34,14 +34,33 @@ INITIAL_PROMPT = (
 )
 
 
-def to_wav(src: str) -> str:
-    """Любое аудио -> моно 16 кГц, как требует модель."""
+# Обработка звука перед распознаванием. В переговорной часть людей сидит далеко
+# от микрофона, их голоса тише и тонут в гуле техники. Фильтры вытягивают речь:
+#   highpass/lowpass — срезают гул кондиционера и шипение
+#   afftdn           — подавление постоянного шума
+#   speechnorm       — выравнивание громкости между ближними и дальними голосами
+# Агрессивное шумоподавление съедает тихие слова, поэтому его тут нет:
+# только срез гула техники и мягкое выравнивание громкости, чтобы дальние
+# голоса звучали сопоставимо с ближними.
+AUDIO_FILTERS = "highpass=f=70,speechnorm=e=6.25:r=0.00001:l=1"
+
+
+def to_wav(src: str, clean: bool = True) -> str:
+    """Любое аудио -> моно 16 кГц с обработкой речи, как требует модель."""
     out = tempfile.mktemp(suffix=".wav")
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-         out, "-loglevel", "error"],
-        check=True,
-    )
+    cmd = ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"]
+    if clean:
+        cmd += ["-af", AUDIO_FILTERS]
+    cmd += [out, "-loglevel", "error"]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError:
+        # если фильтры недоступны в этой сборке ffmpeg, работаем без них
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+             out, "-loglevel", "error"],
+            check=True,
+        )
     return out
 
 
@@ -179,3 +198,52 @@ if __name__ == "__main__":
     print(f"Реплик: {len(segs)} за {time.time() - t0:.1f} сек\n")
     for s in segs[:25]:
         print(f"[{s['start']:6.1f}] {s['speaker']}: {s['text']}")
+
+
+def segment_loudness(audio_path: str, start: float, end: float) -> float:
+    """Средняя громкость куска записи в децибелах.
+
+    Нужна, чтобы при записи с нескольких телефонов понять, чей это голос:
+    в дорожке владельца он звучит громко, в чужих дорожках тихо и издалека.
+    """
+    if end <= start:
+        return -99.0
+    try:
+        out = subprocess.run(
+            # volumedetect печатает результат на уровне info, поэтому вывод не глушим
+            ["ffmpeg", "-hide_banner", "-nostats", "-ss", str(max(0.0, start)),
+             "-t", str(end - start),
+             "-i", audio_path, "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, check=True,
+        )
+        for line in out.stderr.splitlines():
+            if "mean_volume" in line:
+                return float(line.split(":")[1].strip().split()[0])
+    except Exception:
+        pass
+    return -99.0
+
+
+def drop_crosstalk(segments: list[dict], overlap: float = 0.6) -> list[dict]:
+    """Одну реплику слышат все микрофоны, поэтому она попадает в несколько дорожек.
+
+    Из пересекающихся во времени вариантов оставляем тот, где голос громче:
+    кто громче, тот и говорит. Остальные версии отбрасываем, чтобы
+    в стенограмме не задваивались реплики и чужие слова не приписывались молчавшим.
+    """
+    ordered = sorted(segments, key=lambda s: (-s.get("loudness", -99.0), s["start"]))
+    kept: list[dict] = []
+    for seg in ordered:
+        clash = False
+        for k in kept:
+            if k["speaker"] == seg["speaker"]:
+                continue
+            inter = min(seg["end"], k["end"]) - max(seg["start"], k["start"])
+            shorter = min(seg["end"] - seg["start"], k["end"] - k["start"]) or 1
+            if inter / shorter > overlap:
+                clash = True
+                break
+        if not clash:
+            kept.append(seg)
+    kept.sort(key=lambda s: s["start"])
+    return kept
