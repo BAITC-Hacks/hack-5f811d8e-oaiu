@@ -56,7 +56,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT, meeting_date TEXT, status TEXT,
                 audio_path TEXT, transcript TEXT, summary TEXT,
-                created_at TEXT
+                created_at TEXT, language TEXT DEFAULT 'mixed' 
             );
             CREATE TABLE IF NOT EXISTS participants (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +77,10 @@ def init_db():
 
 
 init_db()
+
+with db() as _c:  # база могла быть создана до появления выбора языка
+    if "language" not in {r[1] for r in _c.execute("PRAGMA table_info(meetings)")}:
+        _c.execute("ALTER TABLE meetings ADD COLUMN language TEXT DEFAULT 'mixed'")
 
 
 
@@ -142,7 +146,11 @@ def process_meeting(meeting_id: int, audio_path: str):
     """
     try:
         people = [p["name"] for p in get_participants(meeting_id)]
-        segments = asr.process(audio_path, known_names=people)
+        with db() as conn:
+            row = conn.execute("SELECT language FROM meetings WHERE id=?",
+                               (meeting_id,)).fetchone()
+        language = (row["language"] if row else None) or "mixed"
+        segments = asr.process(audio_path, known_names=people, language=language)
         text = asr.to_text(segments)
         with db() as conn:
             conn.execute(
@@ -205,9 +213,13 @@ def process_meeting_tracks(meeting_id: int, tracks: list[dict]):
     """
     try:
         people = [t["speaker"] for t in tracks]
+        with db() as conn:
+            row = conn.execute("SELECT language FROM meetings WHERE id=?",
+                               (meeting_id,)).fetchone()
+        language = (row["language"] if row else None) or "mixed"
         merged: list[dict] = []
         for t in tracks:
-            segs = asr.transcribe(t["path"], known_names=people)
+            segs = asr.process_track(t["path"], known_names=people, language=language)
             for seg in segs:
                 seg["start"] += t["offset_sec"]
                 seg["end"] += t["offset_sec"]
@@ -353,6 +365,7 @@ def get_meeting(meeting_id: int):
     return {
         "id": m["id"],
         "title": m["title"],
+        "language": m["language"] if "language" in m.keys() else "mixed",
         "meeting_date": m["meeting_date"],
         "status": m["status"],
         "transcript": json.loads(m["transcript"]) if m["transcript"] else [],
@@ -428,6 +441,23 @@ def export_meeting(meeting_id: int):
         filename=f"Протокол_{data['meeting_date']}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+class MeetingLang(BaseModel):
+    language: str  # ru, kk или mixed
+
+
+@app.patch("/api/meetings/{meeting_id}/language")
+def set_language(meeting_id: int, body: MeetingLang):
+    """Язык совещания выбирается до записи.
+
+    Один язык — один проход распознавания, быстро и точно.
+    Смешанный — два прохода с выбором варианта по каждой реплике.
+    """
+    lang = body.language if body.language in ("ru", "kk", "mixed") else "mixed"
+    with db() as conn:
+        conn.execute("UPDATE meetings SET language=? WHERE id=?", (lang, meeting_id))
+    return {"ok": True, "language": lang}
 
 
 class Participant(BaseModel):

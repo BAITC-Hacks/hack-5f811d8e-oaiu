@@ -79,6 +79,9 @@
   .who{font-weight:600}
   input{font:inherit;width:100%;padding:11px;border:1px solid var(--line);
         border-radius:10px;margin-bottom:8px;background:var(--card);color:var(--text)}
+  .langpick{display:flex;gap:6px;margin-bottom:8px}
+  .langpick .lang{margin:0;flex:1;padding:9px;font-size:14px}
+  .langpick .lang.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .qr{display:flex;justify-content:center;padding:12px;background:var(--soft);
       border-radius:10px;margin-bottom:14px}
   .qr svg{width:150px;height:150px}
@@ -96,7 +99,7 @@
 <div class="caption">демо мобильного приложения</div>
 
 <script>
-const S = {meetingId:null, qrTimer:null, pollTimer:null, pollStart:0, tab:'tasks', data:null, recorder:null, chunks:[], t0:0, timer:null};
+const S = {meetingId:null, lang:'mixed', qrTimer:null, pollTimer:null, pollStart:0, tab:'tasks', data:null, recorder:null, chunks:[], t0:0, timer:null};
 const el = document.getElementById('screen');
 const foot = document.getElementById('foot');
 const api = (p,o) => fetch(p,o).then(r=>r.json());
@@ -168,6 +171,14 @@ async function participants(){
     <span class="back" onclick="home()">← Совещания</span>
     <h2>Кто в комнате</h2>
     <div class="sub">Отметился значит уведомлён о записи</div>
+    <div class="langpick">
+      <button class="lang ${S.lang==='ru'?'on':''}" onclick="setLang('ru')">Русский</button>
+      <button class="lang ${S.lang==='kk'?'on':''}" onclick="setLang('kk')">Қазақша</button>
+      <button class="lang ${S.lang==='mixed'?'on':''}" onclick="setLang('mixed')">Аралас</button>
+    </div>
+    <div class="meta" style="margin:-4px 0 14px;font-size:12px">
+      ${S.lang==='mixed' ? 'Два прохода распознавания, дольше, но понимает смешанную речь'
+        : 'Один проход, быстрее и точнее для выбранного языка'}</div>
     <div class="qr" id="qrbox">${qr}</div>
     <div class="meta" style="text-align:center;margin:-6px 0 14px;font-size:12px">
       код действует 4 минуты · отметиться можно только из сети переговорной</div>
@@ -203,6 +214,14 @@ async function finishTracks(){
     return;
   }
   poll();
+}
+
+async function setLang(lang){
+  S.lang = lang;
+  await fetch(`/api/meetings/${S.meetingId}/language`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({language: lang})});
+  participants();
 }
 
 async function removeMeeting(id, title){

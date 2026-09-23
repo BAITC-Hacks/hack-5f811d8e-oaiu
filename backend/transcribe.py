@@ -180,11 +180,19 @@ def apply_names(segments: list[dict], known_names: list[str] | None = None) -> l
     return segments
 
 
-def process(audio_path: str, known_names: list[str] | None = None) -> list[dict]:
-    if USE_MIXED:
-        segments = transcribe_mixed(audio_path, known_names=known_names)
-    else:
-        segments = transcribe(audio_path, known_names=known_names)
+def process_track(audio_path: str, known_names: list[str] | None = None,
+                  language: str = "mixed") -> list[dict]:
+    """Распознавание одной записи с учётом выбранного языка совещания."""
+    if language == "mixed" and USE_MIXED:
+        return transcribe_mixed(audio_path, known_names=known_names)
+    if language in ("ru", "kk"):
+        return transcribe(audio_path, language=language, known_names=known_names)
+    return transcribe(audio_path, known_names=known_names)
+
+
+def process(audio_path: str, known_names: list[str] | None = None,
+            language: str = "mixed") -> list[dict]:
+    segments = process_track(audio_path, known_names=known_names, language=language)
     segments = group_speakers(segments)
     segments = apply_names(segments, known_names)
     return segments
