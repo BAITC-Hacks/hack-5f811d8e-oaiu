@@ -105,6 +105,15 @@
   .list li{padding:11px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
   .list li:last-child{border:none}
   .list b{color:var(--text);font-weight:600}
+  .nghead{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+  .badge-concept{font-size:12px;padding:4px 12px;border-radius:999px;
+                 border:1px solid var(--line);color:var(--muted);background:var(--soft)}
+  .ngtext{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:640px}
+  .ngrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .ngrid figure{margin:0}
+  .ngrid img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);
+             display:block;filter:grayscale(.15)}
+  .ngrid figcaption{color:var(--muted);font-size:12px;margin-top:8px}
   .faq details{border-bottom:1px solid var(--line);padding:14px 0}
   .faq summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none}
   .faq summary::-webkit-details-marker{display:none}
@@ -124,6 +133,7 @@
     .hero{grid-template-columns:1fr;gap:36px;padding:40px 0}
     h1{font-size:34px}
     .steps,.two,.facts,.roles{grid-template-columns:1fr}
+    .ngrid{grid-template-columns:1fr 1fr}
     .arrow{text-align:center;padding:0}
     .arrow::after{content:"↓"}
     .arrow{font-size:0}
@@ -344,7 +354,31 @@
         <h3>Своё устройство записи</h3>
         <div class="who">Полтора месяца</div>
         <p>Плата размером с карту крепится к телефону. Микрофоны по периметру
-           и видимый индикатор записи.</p>
+           и видимый индикатор записи. Показано ниже.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="nextgen">
+    <div class="card">
+      <div class="nghead">
+        <h2 style="margin:0">Следующее поколение: устройство записи</h2>
+        <span class="badge-concept">Концепт</span>
+      </div>
+      <p class="ngtext">Сегодня система работает с телефонами участников, ничего
+        дополнительного не нужно. Устройство добавит качество звука в больших
+        переговорных и видимый индикатор записи. Конструкция готова,
+        производство через полтора месяца.</p>
+      <div class="ngrid">
+        <figure><img src="/static/img/device-back.jpg" alt="Устройство на задней части телефона">
+          <figcaption>Крепится магнитами к телефону</figcaption></figure>
+        <figure><img src="/static/img/device-side.jpg" alt="Толщина устройства">
+          <figcaption>Толщина около 6 мм</figcaption></figure>
+        <figure><img src="/static/img/device-top.jpg" alt="Устройство отдельно">
+          <figcaption>Микрофоны по углам, USB-C, кнопка записи</figcaption></figure>
+        <figure><img src="/static/img/device-room.jpg" alt="Устройство в переговорной">
+          <figcaption>Индикатор показывает, что идёт запись</figcaption></figure>
       </div>
     </div>
   </section>
