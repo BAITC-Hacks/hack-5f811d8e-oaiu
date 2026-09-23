@@ -114,9 +114,15 @@ async function home(){
            onchange="upload(this.files[0])">
     <div class="sect">Последние совещания <a onclick="home()">Все</a></div>
     ${list.length ? list.map(m=>`
-      <div class="item" onclick="open_(${m.id})" style="cursor:pointer">
-        <h3>${m.title}</h3>
-        <div class="meta">${new Date(m.meeting_date).toLocaleDateString('ru-RU')} · ${m.status}</div>
+      <div class="item">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+          <div style="cursor:pointer;flex:1" onclick="open_(${m.id})">
+            <h3>${m.title}</h3>
+            <div class="meta">${new Date(m.meeting_date).toLocaleDateString('ru-RU')} · ${m.status}</div>
+          </div>
+          <span style="color:var(--muted);cursor:pointer;font-size:13px"
+                onclick="removeMeeting(${m.id}, '${(m.title||'').replace(/'/g, "")}')">удалить</span>
+        </div>
       </div>`).join('') : '<div class="empty">Совещаний пока нет</div>'}`;
   tabbar('meetings');
 }
@@ -197,6 +203,13 @@ async function finishTracks(){
     return;
   }
   poll();
+}
+
+async function removeMeeting(id, title){
+  if(!confirm(`Удалить совещание «${title}»?\n\nЗапись, стенограмма и поручения будут стёрты без возможности восстановить.`)) return;
+  await fetch('/api/meetings/'+id, {method:'DELETE'});
+  S.meetingId = null; S.data = null;
+  home();
 }
 
 async function removePerson(id){
@@ -327,7 +340,8 @@ function result(){
       <button class="${S.tab==='tr'?'on':''}" onclick="S.tab='tr';result()">Стенограмма</button>
     </div>
     ${S.tab==='tasks'?tasks:tr}`;
-  showFoot(`<button class="primary" onclick="location.href='/api/meetings/${d.id}/export'">Скачать протокол</button>`);
+  showFoot(`<button class="primary" onclick="location.href='/api/meetings/${d.id}/export'">Скачать протокол</button>
+            <button onclick="removeMeeting(${d.id}, '${(d.title||'').replace(/'/g, "")}')">Удалить совещание</button>`);
 }
 
 home();

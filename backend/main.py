@@ -349,6 +349,36 @@ def get_meeting(meeting_id: int):
     }
 
 
+@app.delete("/api/meetings/{meeting_id}")
+def delete_meeting(meeting_id: int):
+    """Удаление совещания вместе с записями, дорожками и поручениями.
+
+    Файлы стираются с диска: запись совещания не должна лежать дольше, чем нужно.
+    """
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT audio_path FROM meetings WHERE id=?", (meeting_id,)
+        ).fetchall()
+        tracks = conn.execute(
+            "SELECT path FROM tracks WHERE meeting_id=?", (meeting_id,)
+        ).fetchall()
+
+    for r in list(rows) + list(tracks):
+        path = r[0]
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    with db() as conn:
+        conn.execute("DELETE FROM tasks WHERE meeting_id=?", (meeting_id,))
+        conn.execute("DELETE FROM tracks WHERE meeting_id=?", (meeting_id,))
+        conn.execute("DELETE FROM participants WHERE meeting_id=?", (meeting_id,))
+        conn.execute("DELETE FROM meetings WHERE id=?", (meeting_id,))
+    return {"ok": True}
+
+
 class TaskPatch(BaseModel):
     text: str | None = None
     assignee: str | None = None
