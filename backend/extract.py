@@ -159,3 +159,44 @@ def make_title(transcript: str) -> str:
     except Exception:
         pass
     return ""
+
+
+SUMMARY_PROMPT = """Составь краткое содержание совещания по стенограмме.
+
+Требования:
+- три-пять предложений
+- по каждому докладчику: что доложил и какая проблема названа
+- только факты из стенограммы, ничего не додумывать
+- цифры и показатели сохранять
+- без вступлений вроде «на совещании обсуждалось»
+
+Ответ строго в формате JSON: {{"summary": "текст"}}
+
+Стенограмма:
+---
+{transcript}
+---
+
+Ответ JSON:"""
+
+
+def make_summary(transcript: str) -> str:
+    """Краткое содержание. Локально, как и всё остальное."""
+    try:
+        raw = _call_ollama(
+            "/no_think\n" + SUMMARY_PROMPT.format(transcript=transcript[:8000]),
+            timeout=180, max_tokens=900, fmt="json",
+        )
+        try:
+            return json.loads(raw).get("summary", "").strip()
+        except json.JSONDecodeError:
+            # ответ оборвался на лимите длины: достаём текст и обрезаем
+            # до последнего законченного предложения
+            m = re.search(r'"summary"\s*:\s*"(.+)', raw, flags=re.S)
+            if not m:
+                return ""
+            text = m.group(1).rstrip('"} \n')
+            cut = max(text.rfind(". "), text.rfind("."))
+            return text[: cut + 1].strip() if cut > 40 else text.strip()
+    except Exception:
+        return ""

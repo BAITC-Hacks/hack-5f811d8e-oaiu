@@ -151,9 +151,12 @@ def process_meeting(meeting_id: int, audio_path: str):
             )
 
         title = tasks_extractor.make_title(text)
-        if title:
-            with db() as conn:
+        summary = tasks_extractor.make_summary(text)
+        with db() as conn:
+            if title:
                 conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+            if summary:
+                conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary, meeting_id))
 
         found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())
@@ -219,9 +222,12 @@ def process_meeting_tracks(meeting_id: int, tracks: list[dict]):
             )
 
         title = tasks_extractor.make_title(text)
-        if title:
-            with db() as conn:
+        summary = tasks_extractor.make_summary(text)
+        with db() as conn:
+            if title:
                 conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+            if summary:
+                conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary, meeting_id))
 
         found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())

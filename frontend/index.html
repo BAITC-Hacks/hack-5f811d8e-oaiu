@@ -319,6 +319,9 @@ function result(){
     <span class="back" onclick="home()">← Совещания</span>
     <h2>${d.title}</h2>
     <div class="sub">${d.tasks.length} поручений · ${d.transcript.length} реплик</div>
+    ${d.summary ? `<div class="item" style="background:var(--soft)">
+       <h3>Кратко о совещании</h3>
+       <div class="meta" style="line-height:1.5">${d.summary}</div></div>` : ''}
     <div class="tabs">
       <button class="${S.tab==='tasks'?'on':''}" onclick="S.tab='tasks';result()">Поручения</button>
       <button class="${S.tab==='tr'?'on':''}" onclick="S.tab='tr';result()">Стенограмма</button>
