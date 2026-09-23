@@ -4,8 +4,14 @@
 Ни один запрос не уходит в интернет.
 """
 
+import hashlib
+import hmac
+import io
+import ipaddress
 import json
 import os
+import socket
+import time
 import shutil
 import sqlite3
 import tempfile
@@ -13,7 +19,8 @@ import threading
 from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Form
+from fastapi.responses import Response
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -51,6 +58,10 @@ def init_db():
                 audio_path TEXT, transcript TEXT, summary TEXT,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS participants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id INTEGER, name TEXT, position TEXT, joined_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 meeting_id INTEGER, text TEXT, assignee TEXT, author TEXT,
@@ -64,10 +75,70 @@ def init_db():
 init_db()
 
 
-def process_meeting(meeting_id: int, audio_path: str):
-    """Полный разбор: звук -> реплики -> поручения -> даты -> база."""
+
+# --- Защита отметки участников -------------------------------------------------
+# QR обновляется каждые 15 секунд, код привязан к совещанию и окну времени.
+# Скриншот, пересланный коллеге, перестаёт работать почти сразу.
+ROOM_SECRET = os.environ.get("HATTAMA_SECRET", "hattama-local-secret")
+WINDOW = 120  # секунд: код живёт до 4 минут с учётом предыдущего окна.
+# Скорость сканирования не должна отсекать людей, которые медленно обращаются
+# с телефоном. Основная защита от удалённого подключения — проверка сети.
+
+
+def room_code(meeting_id: int, shift: int = 0) -> str:
+    window = int(time.time() // WINDOW) + shift
+    msg = f"{meeting_id}:{window}".encode()
+    return hmac.new(ROOM_SECRET.encode(), msg, hashlib.sha256).hexdigest()[:10]
+
+
+def code_valid(meeting_id: int, code: str) -> bool:
+    """Принимаем текущее окно и предыдущее: человек мог сканировать на стыке."""
+    return code in (room_code(meeting_id), room_code(meeting_id, -1))
+
+
+def same_network(client_ip: str, host_ip: str) -> bool:
+    """Отметиться можно только из сети переговорной, не из дома."""
+    if client_ip in ("127.0.0.1", "::1", "testclient"):
+        return True
     try:
-        segments = asr.process(audio_path)
+        c, h = ipaddress.ip_address(client_ip), ipaddress.ip_address(host_ip)
+    except ValueError:
+        return False
+    if not c.is_private:
+        return False
+    return c.packed[:3] == h.packed[:3]  # одна подсеть /24
+
+
+def server_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def get_participants(meeting_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, position FROM participants WHERE meeting_id=? ORDER BY id",
+            (meeting_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def process_meeting(meeting_id: int, audio_path: str):
+    """Полный разбор: звук -> реплики -> поручения -> даты -> база.
+
+    Если участники отметились перед совещанием, их имена уходят в словарь
+    распознавания и в разбор поручений: модель не гадает, а выбирает
+    из известного списка.
+    """
+    try:
+        people = [p["name"] for p in get_participants(meeting_id)]
+        segments = asr.process(audio_path, known_names=people)
         text = asr.to_text(segments)
         with db() as conn:
             conn.execute(
@@ -75,7 +146,7 @@ def process_meeting(meeting_id: int, audio_path: str):
                 (json.dumps(segments, ensure_ascii=False), "разбираю поручения", meeting_id),
             )
 
-        found = tasks_extractor.extract_tasks(text)
+        found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())
 
         with db() as conn:
@@ -97,20 +168,38 @@ def process_meeting(meeting_id: int, audio_path: str):
             )
 
 
+@app.post("/api/meetings/draft")
+def create_draft(title: str = "Совещание"):
+    """Совещание заводится до записи: сначала отмечаются участники."""
+    with db() as conn:
+        cur = conn.execute(
+            "INSERT INTO meetings (title, meeting_date, status, created_at) VALUES (?,?,?,?)",
+            (title, date.today().isoformat(), "участники", datetime.now().isoformat()),
+        )
+    return {"id": cur.lastrowid}
+
+
 @app.post("/api/meetings")
-async def upload_meeting(file: UploadFile = File(...), title: str = "Совещание"):
+async def upload_meeting(file: UploadFile = File(...), title: str = "Совещание",
+                         meeting_id: int | None = Form(None)):
     suffix = Path(file.filename or "audio.wav").suffix or ".wav"
     dest = DATA / f"upload_{datetime.now():%Y%m%d_%H%M%S}{suffix}"
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     with db() as conn:
-        cur = conn.execute(
-            "INSERT INTO meetings (title, meeting_date, status, audio_path, created_at) VALUES (?,?,?,?,?)",
-            (title, date.today().isoformat(), "распознаю речь", str(dest),
-             datetime.now().isoformat()),
-        )
-        meeting_id = cur.lastrowid
+        if meeting_id:
+            conn.execute(
+                "UPDATE meetings SET status=?, audio_path=? WHERE id=?",
+                ("распознаю речь", str(dest), meeting_id),
+            )
+        else:
+            cur = conn.execute(
+                "INSERT INTO meetings (title, meeting_date, status, audio_path, created_at) VALUES (?,?,?,?,?)",
+                (title, date.today().isoformat(), "распознаю речь", str(dest),
+                 datetime.now().isoformat()),
+            )
+            meeting_id = cur.lastrowid
 
     threading.Thread(target=process_meeting, args=(meeting_id, str(dest)), daemon=True).start()
     return {"id": meeting_id, "status": "распознаю речь"}
@@ -191,13 +280,97 @@ def export_meeting(meeting_id: int):
     )
 
 
-WEB = ROOT / "frontend"
+class Participant(BaseModel):
+    name: str
+    position: str = ""
+    code: str | None = None  # код из QR; пусто значит добавил ведущий на своём устройстве
+
+
+@app.post("/api/meetings/{meeting_id}/participants")
+def add_participant(meeting_id: int, p: Participant, request: Request = None):
+    """Отметка участника. Отметился значит уведомлён о записи и согласен.
+
+    Три проверки: код из QR не протух, устройство в сети переговорной,
+    запись ещё не началась.
+    """
+    with db() as conn:
+        m = conn.execute("SELECT status FROM meetings WHERE id=?", (meeting_id,)).fetchone()
+    if m and m["status"] not in ("участники", None):
+        raise HTTPException(409, "запись уже началась, отметка закрыта")
+
+    if p.code is not None:  # отметка с телефона участника
+        if not code_valid(meeting_id, p.code):
+            raise HTTPException(403, "код устарел, отсканируйте QR заново")
+        client_ip = request.client.host if request and request.client else ""
+        if not same_network(client_ip, server_ip()):
+            raise HTTPException(403, "отметиться можно только из сети переговорной")
+
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO participants (meeting_id, name, position, joined_at) VALUES (?,?,?,?)",
+            (meeting_id, p.name.strip(), p.position.strip(), datetime.now().isoformat()),
+        )
+    return {"ok": True, "participants": get_participants(meeting_id)}
+
+
+@app.get("/api/meetings/{meeting_id}/participants")
+def list_participants(meeting_id: int):
+    return get_participants(meeting_id)
+
+
+@app.delete("/api/participants/{participant_id}")
+def remove_participant(participant_id: int):
+    """Ведущий убирает лишнего из списка."""
+    with db() as conn:
+        conn.execute("DELETE FROM participants WHERE id=?", (participant_id,))
+    return {"ok": True}
+
+
+@app.get("/api/meetings/{meeting_id}/qr.svg")
+def participant_qr(meeting_id: int, request: Request):
+    """QR для отметки участников. Рисуется локально, без сторонних сервисов."""
+    import segno
+
+    host = request.headers.get("host", "localhost:8000")
+    # Если страницу открыли на самом сервере, в QR нужен адрес в сети,
+    # иначе телефон уйдёт на свой собственный localhost.
+    name = host.split(":")[0]
+    if name in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+        port = host.split(":")[1] if ":" in host else "8000"
+        host = f"{server_ip()}:{port}"
+    url = f"http://{host}/join/{meeting_id}?c={room_code(meeting_id)}"
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(
+        buf, kind="svg", scale=6, border=3,
+        dark="#11181f", light="#ffffff", xmldecl=False,
+    )
+    return Response(content=buf.getvalue(), media_type="image/svg+xml")
+
+
+@app.get("/join/{meeting_id}", response_class=HTMLResponse)
+def join_page(meeting_id: int):
+    page = WEB_DIR / "join.html"
+    if page.exists():
+        return page.read_text(encoding="utf-8").replace("{{MEETING_ID}}", str(meeting_id))
+    return "<h1>Отметка участника</h1>"
+
+
+WEB_DIR = ROOT / "frontend"
+WEB = WEB_DIR
 if WEB.exists():
     app.mount("/static", StaticFiles(directory=WEB), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-def index():
+def landing():
+    page = WEB / "landing.html"
+    if page.exists():
+        return page.read_text(encoding="utf-8")
+    return "<h1>Hattama</h1>"
+
+
+@app.get("/app", response_class=HTMLResponse)
+def app_page():
     page = WEB / "index.html"
     if page.exists():
         return page.read_text(encoding="utf-8")

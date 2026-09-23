@@ -45,7 +45,21 @@ def to_wav(src: str) -> str:
     return out
 
 
-def transcribe(audio_path: str, language: str = "auto") -> list[dict]:
+def build_prompt(known_names: list[str] | None = None) -> str:
+    """Словарь для модели. Имена отметившихся участников резко снижают
+    число ошибок в именах, а имя нам нужно для привязки поручения."""
+    if not known_names:
+        return INITIAL_PROMPT
+    people = ", ".join(known_names)
+    return (
+        f"Оперативное совещание. Участники: {people}. "
+        "Обсуждаются поручения и сроки: до конца недели, за две недели, "
+        "на этой неделе, к пятнадцатому октября. Сәлеметсіздер ме, жақсы, рахмет."
+    )
+
+
+def transcribe(audio_path: str, language: str = "auto",
+               known_names: list[str] | None = None) -> list[dict]:
     """Возвращает реплики: [{start, end, text}] в секундах."""
     model = _pick_model()
     wav = to_wav(audio_path)
@@ -58,7 +72,7 @@ def transcribe(audio_path: str, language: str = "auto") -> list[dict]:
         "-bs", "5",                 # поиск лучшего варианта вместо первого попавшегося
         "-bo", "5",
         "-et", "2.6",               # порог, после которого пробуется другой вариант
-        "--prompt", INITIAL_PROMPT, # словарь имён и терминов
+        "--prompt", build_prompt(known_names),  # словарь имён и терминов
         "--max-len", "0",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
@@ -126,17 +140,28 @@ def guess_names(segments: list[dict]) -> dict:
     return mapping
 
 
-def apply_names(segments: list[dict]) -> list[dict]:
+def apply_names(segments: list[dict], known_names: list[str] | None = None) -> list[dict]:
     mapping = guess_names(segments)
+    if known_names:
+        # Имена отметившихся: если в реплике прозвучало обращение к участнику
+        # из списка, привязываем следующего говорящего к нему.
+        for i, seg in enumerate(segments):
+            for name in known_names:
+                first = name.split()[0]
+                if first and first.lower() in seg["text"].lower():
+                    for nxt in segments[i + 1 : i + 3]:
+                        if nxt["speaker_id"] != seg["speaker_id"]:
+                            mapping.setdefault(nxt["speaker_id"], name)
+                            break
     for seg in segments:
         seg["speaker"] = mapping.get(seg["speaker_id"], seg["speaker_id"])
     return segments
 
 
-def process(audio_path: str) -> list[dict]:
-    segments = transcribe(audio_path)
+def process(audio_path: str, known_names: list[str] | None = None) -> list[dict]:
+    segments = transcribe(audio_path, known_names=known_names)
     segments = group_speakers(segments)
-    segments = apply_names(segments)
+    segments = apply_names(segments, known_names)
     return segments
 
 

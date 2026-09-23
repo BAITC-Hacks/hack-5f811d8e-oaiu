@@ -65,8 +65,18 @@ def _parse_json_array(raw: str):
     return json.loads(raw[start : end + 1])
 
 
-def extract_tasks(transcript: str) -> list[dict]:
-    raw = _call_ollama(PROMPT.format(transcript=transcript))
+def extract_tasks(transcript: str, known_names: list[str] | None = None) -> list[dict]:
+    prompt = PROMPT.format(transcript=transcript)
+    if known_names:
+        people = ", ".join(known_names)
+        prompt = prompt.replace(
+            "Стенограмма:",
+            f"В совещании участвуют: {people}.\n"
+            "В поле assignee указывай имя ТОЛЬКО из этого списка. "
+            "Если поручение адресовано кому-то вне списка, пиши как в тексте.\n\n"
+            "Стенограмма:",
+        )
+    raw = _call_ollama(prompt)
     tasks = _parse_json_array(raw)
     out = []
     for i, t in enumerate(tasks, 1):
