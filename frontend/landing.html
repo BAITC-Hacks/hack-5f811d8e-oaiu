@@ -25,8 +25,8 @@
   .btn.lg{padding:15px 34px;font-size:16px}
   .nav .btn{margin-left:28px}
 
-  .hero{display:grid;grid-template-columns:1fr 340px;gap:48px;align-items:center;
-        padding:64px 0}
+  .hero{display:grid;grid-template-columns:1fr 420px;gap:40px;align-items:center;
+        padding:56px 0}
   .eyebrow{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
            margin-bottom:18px}
   h1{font-size:44px;line-height:1.12;margin:0 0 20px;letter-spacing:-.02em}
@@ -55,6 +55,19 @@
          padding-top:10px;margin-top:12px;color:var(--muted);font-size:10px}
   .ptabs b{color:var(--accent);font-weight:600}
 
+  .heroart img{width:100%;height:auto;display:block}
+  .withart{display:grid;grid-template-columns:200px 1fr;gap:28px;align-items:end}
+  .withart h2{grid-column:1 / -1;margin-bottom:0}
+  .withart .art-left{width:200px;height:auto;align-self:end;margin-bottom:-6px}
+  .withart .roles{grid-template-columns:repeat(3,1fr)}
+  .kzart{position:relative;overflow:hidden}
+  .kzart .art-kz{position:absolute;right:-30px;bottom:-30px;width:180px;
+                 height:auto;pointer-events:none;opacity:.97}
+  .kzart .quote{margin-right:150px}
+  .howblock{position:relative;overflow:visible}
+  .howblock .mascot{position:absolute;right:-8px;bottom:-14px;width:210px;
+                    height:auto;pointer-events:none}
+  .howblock .steps{padding-right:170px}
   section{padding:0 0 56px}
   .card{border:1px solid var(--line);border-radius:12px;padding:26px}
   h2{font-size:23px;margin:0 0 22px;letter-spacing:-.01em}
@@ -116,7 +129,13 @@
     .arrow{font-size:0}
     .arrow::after{font-size:18px}
     .nav .links{display:none}
-    .phone{max-width:320px}
+    .heroart img{max-width:340px;margin:0 auto}
+    .withart{grid-template-columns:1fr}
+    .withart .art-left{width:140px;margin:0 auto 14px}
+    .kzart .art-kz{position:static;width:130px;display:block;margin:14px auto 0}
+    .kzart .quote{margin-right:0}
+    .howblock .mascot{position:static;width:150px;margin:14px auto 0;display:block}
+    .howblock .steps{padding-right:0}
   }
 </style>
 </head>
@@ -150,35 +169,14 @@
       </div>
     </div>
 
-    <div class="phone">
-      <div class="pscreen">
-        <div class="pbar"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="prec"><span class="pdot"></span>Идёт запись</div>
-        <div class="pttl">Поручения</div>
-
-        <div class="pcard">
-          <b>Претензия поставщику</b>
-          <span class="who">Ерлан</span>
-          <div class="pfoot"><span class="date">25.09</span><span class="chip">в работе</span></div>
-        </div>
-        <div class="pcard">
-          <b>Альтернативный поставщик</b>
-          <span class="who">Ботагоз Нурлановна</span>
-          <div class="pfoot"><span class="date">07.10</span><span class="chip">в работе</span></div>
-        </div>
-        <div class="pcard">
-          <b>Смета по доп. группам</b>
-          <span class="who">Ерболат Мухтарович</span>
-          <div class="pfoot"><span class="date">30.09</span><span class="chip late">просрочено</span></div>
-        </div>
-
-        <div class="ptabs"><span>▤<br>Совещания</span><b>✓<br>Поручения</b><span>◍<br>Профиль</span></div>
-      </div>
+    <div class="heroart">
+      <img src="/static/img/hero-phone.png" alt="Приложение Hattama с поручениями">
     </div>
   </div>
 
   <section id="how">
-    <div class="card soft">
+    <div class="card soft howblock">
+      <img class="mascot" src="/static/img/mascot.png" alt="">
       <h2>Как это работает</h2>
       <div class="steps">
         <div class="step">
@@ -215,8 +213,9 @@
     </div>
   </section>
 
-  <section>
+  <section class="withart">
     <h2>Что получает каждый</h2>
+    <img class="art-left" src="/static/img/mascot-doc.png" alt="">
     <div class="roles">
       <div class="role">
         <h3>Протокол без ручной работы</h3>
@@ -314,7 +313,8 @@
       </table>
     </div>
 
-    <div class="card kz" id="kz">
+    <div class="card kz kzart" id="kz">
+      <img class="art-kz" src="/static/img/mascot-give.png" alt="">
       <h2>Казахский и смешанная речь</h2>
       <p>На совещаниях говорят на двух языках сразу, иногда в одной фразе.
          Система разбирает такую речь и правильно вытаскивает срок.</p>
