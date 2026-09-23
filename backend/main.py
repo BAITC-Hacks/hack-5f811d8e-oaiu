@@ -147,16 +147,22 @@ def process_meeting(meeting_id: int, audio_path: str):
         with db() as conn:
             conn.execute(
                 "UPDATE meetings SET transcript=?, status=? WHERE id=?",
-                (json.dumps(segments, ensure_ascii=False), "разбираю поручения", meeting_id),
+                (json.dumps(segments, ensure_ascii=False), "разделяю говорящих", meeting_id),
             )
 
         title = tasks_extractor.make_title(text)
-        summary = tasks_extractor.make_summary(text)
         with db() as conn:
             if title:
                 conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+            conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                         ("составляю краткое содержание", meeting_id))
+
+        summary = tasks_extractor.make_summary(text)
+        with db() as conn:
             if summary:
                 conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary, meeting_id))
+            conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                         ("ищу поручения", meeting_id))
 
         found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())
@@ -218,16 +224,22 @@ def process_meeting_tracks(meeting_id: int, tracks: list[dict]):
         with db() as conn:
             conn.execute(
                 "UPDATE meetings SET transcript=?, status=? WHERE id=?",
-                (json.dumps(merged, ensure_ascii=False), "разбираю поручения", meeting_id),
+                (json.dumps(merged, ensure_ascii=False), "разделяю говорящих", meeting_id),
             )
 
         title = tasks_extractor.make_title(text)
-        summary = tasks_extractor.make_summary(text)
         with db() as conn:
             if title:
                 conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+            conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                         ("составляю краткое содержание", meeting_id))
+
+        summary = tasks_extractor.make_summary(text)
+        with db() as conn:
             if summary:
                 conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary, meeting_id))
+            conn.execute("UPDATE meetings SET status=? WHERE id=?",
+                         ("ищу поручения", meeting_id))
 
         found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())

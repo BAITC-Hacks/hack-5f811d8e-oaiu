@@ -96,7 +96,7 @@
 <div class="caption">демо мобильного приложения</div>
 
 <script>
-const S = {meetingId:null, qrTimer:null, tab:'tasks', data:null, recorder:null, chunks:[], t0:0, timer:null};
+const S = {meetingId:null, qrTimer:null, pollTimer:null, pollStart:0, tab:'tasks', data:null, recorder:null, chunks:[], t0:0, timer:null};
 const el = document.getElementById('screen');
 const foot = document.getElementById('foot');
 const api = (p,o) => fetch(p,o).then(r=>r.json());
@@ -275,11 +275,14 @@ async function upload(blob, name){
   poll();
 }
 
-const STEPS = ['Готовлю звук','Распознаю речь','Разделяю говорящих','Ищу поручения'];
+const STEPS = ['Готовлю звук','Распознаю речь','Разделяю говорящих',
+               'Составляю краткое содержание','Ищу поручения'];
 function processing(current){
   const idx = STEPS.indexOf(current);
+  const sec = S.pollStart ? Math.floor((Date.now() - S.pollStart)/1000) : 0;
+  const mm = String(Math.floor(sec/60)).padStart(2,'0'), ss = String(sec%60).padStart(2,'0');
   el.innerHTML = `<h2>Обрабатываю запись</h2>
-    <div class="sub">Всё считается на этом компьютере</div>
+    <div class="sub">Всё считается на этом компьютере · ${mm}:${ss}</div>
     ${STEPS.map((s,i)=>`
       <div class="step ${i<idx?'done':i===idx?'active':''}">
         <span class="mark">${i<idx?'✓':''}</span>${s}
@@ -288,20 +291,39 @@ function processing(current){
 }
 
 function statusToStep(st){
+  st = (st || '').toLowerCase();
   if(st.startsWith('распозна')) return 'Распознаю речь';
-  if(st.startsWith('разбираю')) return 'Ищу поручения';
+  if(st.startsWith('разделяю')) return 'Разделяю говорящих';
+  if(st.startsWith('составляю')) return 'Составляю краткое содержание';
+  if(st.startsWith('ищу') || st.startsWith('разбираю')) return 'Ищу поручения';
   return 'Готовлю звук';
 }
 
 async function poll(){
-  const d = await api('/api/meetings/'+S.meetingId);
-  if(d.status === 'готово'){ S.data = d; result(); return; }
-  if(d.status.startsWith('ошибка')){
-    el.innerHTML = `<h2>Не получилось</h2><div class="sub">${d.status}</div>
-      <button onclick="home()">К совещаниям</button>`; return;
-  }
-  processing(statusToStep(d.status));
-  setTimeout(poll, 1500);
+  // опрос не должен прерываться из-за единичного сбоя сети:
+  // иначе экран остаётся на шаге обработки, хотя разбор уже закончен
+  clearInterval(S.pollTimer);
+  S.pollStart = Date.now();
+  S.pollTimer = setInterval(async () => {
+    try{
+      const r = await fetch('/api/meetings/' + S.meetingId, {cache: 'no-store'});
+      if(!r.ok) return;
+      const d = await r.json();
+      if(d.status === 'готово'){
+        clearInterval(S.pollTimer);
+        S.data = d; result(); return;
+      }
+      if((d.status || '').startsWith('ошибка')){
+        clearInterval(S.pollTimer);
+        el.innerHTML = `<h2>Не получилось</h2><div class="sub">${d.status}</div>
+          <button onclick="home()">К совещаниям</button>`;
+        return;
+      }
+      processing(statusToStep(d.status));
+    } catch(e){
+      // сеть моргнула: пробуем снова на следующем тике
+    }
+  }, 1500);
 }
 
 async function open_(id){ S.meetingId = id; S.data = await api('/api/meetings/'+id); result(); }
