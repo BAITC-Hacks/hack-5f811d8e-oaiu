@@ -39,7 +39,11 @@ PROMPT = """Ты — секретарь совещания. Твоя задач�
 Ответ — массив JSON:"""
 
 
-def _call_ollama(prompt: str, timeout: int = 300) -> str:
+def _call_ollama(prompt: str, timeout: int = 300, max_tokens: int | None = None,
+                 fmt: str | None = None) -> str:
+    options = {"temperature": 0.1, "num_ctx": 16384}
+    if max_tokens:
+        options["num_predict"] = max_tokens
     resp = requests.post(
         OLLAMA_URL,
         json={
@@ -47,7 +51,8 @@ def _call_ollama(prompt: str, timeout: int = 300) -> str:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "think": False,
-            "options": {"temperature": 0.1, "num_ctx": 16384},
+            **({"format": fmt} if fmt else {}),
+            "options": options,
         },
         timeout=timeout,
     )
@@ -59,10 +64,16 @@ def _parse_json_array(raw: str):
     """Модель иногда оборачивает ответ в markdown или добавляет рассуждения."""
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S).strip()
     raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.M).strip()
-    start, end = raw.find("["), raw.rfind("]")
-    if start == -1 or end == -1:
+    start = raw.find("[")
+    if start == -1:
         raise ValueError(f"В ответе модели нет массива JSON: {raw[:200]}")
-    return json.loads(raw[start : end + 1])
+    # модель иногда дописывает пояснения после массива: берём только массив
+    try:
+        data, _ = json.JSONDecoder().raw_decode(raw[start:])
+        return data
+    except json.JSONDecodeError:
+        end = raw.rfind("]")
+        return json.loads(raw[start : end + 1])
 
 
 def extract_tasks(transcript: str, known_names: list[str] | None = None) -> list[dict]:
@@ -109,3 +120,42 @@ if __name__ == "__main__":
         print(f"    кому: {t['assignee']}  |  срок: {t['deadline_raw'] or 'не назван'}")
         print(f"    цитата: {t['quote'][:90]}...")
         print()
+
+
+TITLE_PROMPT = """Придумай короткое название для совещания по его стенограмме.
+Ответ строго в формате JSON: {{"title": "название"}}
+
+Требования:
+- от двух до пяти слов
+- по сути обсуждения, а не общими словами
+- без кавычек, без точки в конце
+- примеры хороших: Поставки сырья и претензия, Инвестпрограмма и подрядчики,
+  Охрана труда и переаттестация
+- плохие примеры: Совещание, Рабочая встреча, Обсуждение вопросов
+
+Стенограмма:
+---
+{transcript}
+---
+
+Ответ JSON:"""
+
+
+def make_title(transcript: str) -> str:
+    """Название совещания по содержанию. Локально, как и всё остальное.
+
+    Ответ короткий, поэтому ограничиваем длину и отключаем размышления модели:
+    иначе на заголовок уходит больше времени, чем на разбор поручений.
+    """
+    try:
+        raw = _call_ollama(
+            "/no_think\n" + TITLE_PROMPT.format(transcript=transcript[:1500]),
+            timeout=90, max_tokens=60, fmt="json",
+        )
+        title = json.loads(raw).get("title", "").strip().strip('"«». ')
+        words = title.split()
+        if 1 < len(words) <= 8:
+            return title[0].upper() + title[1:]
+    except Exception:
+        pass
+    return ""

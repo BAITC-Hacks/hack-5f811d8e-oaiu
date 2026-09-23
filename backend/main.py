@@ -146,6 +146,11 @@ def process_meeting(meeting_id: int, audio_path: str):
                 (json.dumps(segments, ensure_ascii=False), "разбираю поручения", meeting_id),
             )
 
+        title = tasks_extractor.make_title(text)
+        if title:
+            with db() as conn:
+                conn.execute("UPDATE meetings SET title=? WHERE id=?", (title, meeting_id))
+
         found = tasks_extractor.extract_tasks(text, known_names=people)
         found = dates_mod.enrich(found, date.today())
 
