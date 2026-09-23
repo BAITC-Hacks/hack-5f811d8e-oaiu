@@ -262,15 +262,34 @@ def drop_crosstalk(segments: list[dict], overlap: float = 0.6) -> list[dict]:
 # реплике выбирается тот вариант, который действительно на своём языке.
 
 KZ_LETTERS = set("әғқңөұүһі")
+# Частые казахские слова без особых букв: по ним тоже видно язык реплики
+KZ_WORDS = {
+    "бойынша", "керек", "қажет", "және", "үшін", "болады", "деп", "бар", "жоқ",
+    "мен", "сіз", "біз", "осы", "бұл", "сол", "енді", "жақсы", "рахмет", "ия",
+    "ме", "ма", "ба", "бе", "па", "пе", "та", "те", "да", "де",
+    "аптада", "айда", "жылы", "күні", "уақыт", "жиналыс", "есеп", "тапсырма",
+}
 USE_MIXED = os.environ.get("HATTAMA_MIXED", "on").lower() != "off"
 
 
 def kazakh_score(text: str) -> float:
-    """Доля букв, которые есть только в казахском алфавите."""
-    letters = [c for c in text.lower() if c.isalpha()]
-    if not letters:
+    """Доля казахских слов в реплике.
+
+    Считаем по словам, а не по буквам: когда казахский проход слышит русскую речь,
+    он иногда вставляет одну казахскую букву в слово, и оценка по буквам
+    ошибочно объявляет всю фразу казахской.
+
+    Казахским считаем слово, в котором есть буква из казахского алфавита
+    либо которое входит в список частых казахских слов.
+    """
+    words = re.findall(r"[^\W\d_]+", text.lower(), flags=re.UNICODE)
+    if not words:
         return 0.0
-    return sum(1 for c in letters if c in KZ_LETTERS) / len(letters)
+    kz = 0
+    for w in words:
+        if set(w) & KZ_LETTERS or w in KZ_WORDS:
+            kz += 1
+    return kz / len(words)
 
 
 def _overlap(a: dict, b: dict) -> float:
@@ -279,12 +298,13 @@ def _overlap(a: dict, b: dict) -> float:
     return inter / shorter
 
 
-def merge_languages(ru: list[dict], kk: list[dict], threshold: float = 0.04) -> list[dict]:
+def merge_languages(ru: list[dict], kk: list[dict], threshold: float = 0.25) -> list[dict]:
     """Склейка двух проходов.
 
-    Берём русский проход за основу: деловая часть совещания обычно на русском.
-    Реплику заменяем казахским вариантом, если в нём есть заметная доля
-    казахских букв, которых в русском проходе не оказалось.
+    Русский проход берём за основу: деловая часть совещания обычно на русском.
+    Реплику заменяем казахским вариантом только если он уверенно казахский:
+    четверть слов и больше. Тогда единичные казахские слова в русской фразе
+    не переключают всю реплику.
     """
     out = []
     for seg in ru:
@@ -292,14 +312,15 @@ def merge_languages(ru: list[dict], kk: list[dict], threshold: float = 0.04) -> 
         for other in kk:
             if _overlap(seg, other) < 0.5:
                 continue
-            if kazakh_score(other["text"]) > max(threshold, kazakh_score(seg["text"])):
+            score_kk, score_ru = kazakh_score(other["text"]), kazakh_score(seg["text"])
+            if score_kk >= threshold and score_kk > score_ru:
                 best = {**seg, "text": other["text"], "lang": "kk"}
             break
         out.append(best)
 
     # казахские реплики, которых русский проход не услышал вовсе
     for other in kk:
-        if kazakh_score(other["text"]) <= threshold:
+        if kazakh_score(other["text"]) < threshold:
             continue
         if any(_overlap(other, s) > 0.5 for s in out):
             continue
