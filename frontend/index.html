@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hattama — протокол совещаний</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --text:#1a1d21; --muted:#6b7280;
+    --accent:#1f6feb; --danger:#d1242f; --ok:#1a7f37;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d1117; --card:#161b22; --line:#30363d; --text:#e6edf3; --muted:#9198a1;
+      --accent:#4493f8; --danger:#f85149; --ok:#3fb950;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  h1{font-size:24px;margin:0;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px}
+  .offline{margin-left:auto;font-size:12px;color:var(--ok);border:1px solid var(--line);
+           padding:4px 10px;border-radius:999px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:20px;margin-top:20px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;padding:10px 18px;border-radius:8px;border:1px solid var(--line);
+         background:var(--card);color:var(--text);cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  input[type=file]{font:inherit}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  td[contenteditable]{outline:none}
+  td[contenteditable]:focus{background:rgba(127,127,127,.08);border-radius:4px}
+  .quote{color:var(--muted);font-size:13px;font-style:italic;margin-top:4px}
+  .rule{color:var(--muted);font-size:12px}
+  .badge{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);
+         white-space:nowrap;cursor:pointer}
+  .b-work{color:var(--accent)} .b-late{color:var(--danger)} .b-done{color:var(--ok)}
+  .status{color:var(--muted);font-size:14px;margin-top:12px}
+  .speaker{font-weight:600}
+  .seg{padding:6px 0;border-bottom:1px solid var(--line)}
+  .time{color:var(--muted);font-size:12px;margin-right:8px}
+  .empty{color:var(--muted);padding:12px 0}
+  .rec{display:inline-flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--danger);
+       animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Hattama</h1>
+    <span class="sub">протокол совещаний с контролем поручений</span>
+    <span class="offline">работает локально, без интернета</span>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <input type="file" id="file" accept="audio/*,video/*">
+      <button class="primary" id="upload">Разобрать запись</button>
+      <button id="record">● Записать совещание</button>
+      <span id="recinfo"></span>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card" id="tasksCard" hidden>
+    <div class="row">
+      <strong>Поручения</strong>
+      <button id="export" style="margin-left:auto">Скачать протокол (DOCX)</button>
+    </div>
+    <table id="tasks">
+      <thead><tr>
+        <th style="width:38%">Поручение</th><th>Ответственный</th>
+        <th>Срок</th><th>Статус</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="trCard" hidden>
+    <strong>Стенограмма</strong>
+    <div id="transcript"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let meetingId = null, poll = null, recorder = null, chunks = [];
+
+function setStatus(t){ $('#status').textContent = t; }
+
+async function send(blob, name){
+  const fd = new FormData();
+  fd.append('file', blob, name);
+  setStatus('Загружаю запись…');
+  const r = await fetch('/api/meetings', {method:'POST', body:fd});
+  const d = await r.json();
+  meetingId = d.id;
+  setStatus('Распознаю речь…');
+  clearInterval(poll);
+  poll = setInterval(check, 2000);
+}
+
+async function check(){
+  const r = await fetch('/api/meetings/' + meetingId);
+  const d = await r.json();
+  setStatus('Статус: ' + d.status);
+  if (d.transcript.length) renderTranscript(d.transcript);
+  if (d.status === 'готово' || d.status.startsWith('ошибка')){
+    clearInterval(poll);
+    renderTasks(d.tasks);
+    if (d.status === 'готово') setStatus('Готово. Найдено поручений: ' + d.tasks.length);
+  }
+}
+
+function badge(status){
+  const cls = status === 'просрочено' ? 'b-late' : status === 'выполнено' ? 'b-done' : 'b-work';
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+
+function renderTasks(tasks){
+  $('#tasksCard').hidden = false;
+  const tb = $('#tasks tbody');
+  tb.innerHTML = '';
+  if (!tasks.length){ tb.innerHTML = '<tr><td colspan="4" class="empty">Поручений не найдено</td></tr>'; return; }
+  for (const t of tasks){
+    const tr = document.createElement('tr');
+    const dl = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
+    tr.innerHTML = `
+      <td contenteditable data-f="text" data-id="${t.id}">${t.text}
+        ${t.quote ? `<div class="quote">«${t.quote}»</div>` : ''}</td>
+      <td contenteditable data-f="assignee" data-id="${t.id}">${t.assignee || '—'}</td>
+      <td>${dl}<div class="rule">${t.deadline_raw || ''}${t.deadline_rule ? ' · ' + t.deadline_rule : ''}</div></td>
+      <td data-status="${t.id}">${badge(t.status)}</td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll('[contenteditable]').forEach(td => {
+    td.addEventListener('blur', () => {
+      const body = {}; body[td.dataset.f] = td.textContent.trim().split('«')[0].trim();
+      fetch('/api/tasks/' + td.dataset.id, {
+        method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    });
+  });
+  tb.querySelectorAll('[data-status]').forEach(td => {
+    td.addEventListener('click', () => {
+      const cur = td.textContent.trim();
+      const next = cur === 'выполнено' ? 'в работе' : 'выполнено';
+      td.innerHTML = badge(next);
+      fetch('/api/tasks/' + td.dataset.status, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({status: next})});
+    });
+  });
+}
+
+function renderTranscript(segs){
+  $('#trCard').hidden = false;
+  $('#transcript').innerHTML = segs.map(s =>
+    `<div class="seg"><span class="time">${new Date(s.start*1000).toISOString().substr(14,5)}</span>
+     <span class="speaker">${s.speaker}:</span> ${s.text}</div>`).join('');
+}
+
+$('#upload').onclick = () => {
+  const f = $('#file').files[0];
+  if (!f){ setStatus('Выберите файл записи'); return; }
+  send(f, f.name);
+};
+
+$('#record').onclick = async () => {
+  if (recorder && recorder.state === 'recording'){
+    recorder.stop();
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  recorder = new MediaRecorder(stream);
+  chunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    $('#record').textContent = '● Записать совещание';
+    $('#recinfo').innerHTML = '';
+    send(new Blob(chunks, {type:'audio/webm'}), 'recording.webm');
+  };
+  recorder.start();
+  $('#record').textContent = '■ Остановить запись';
+  $('#recinfo').innerHTML = '<span class="rec"><span class="dot"></span>идёт запись — участники уведомлены</span>';
+};
+
+$('#export').onclick = () => { if (meetingId) location.href = `/api/meetings/${meetingId}/export`; };
+</script>
+</body>
+</html>
