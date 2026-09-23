@@ -181,7 +181,10 @@ def apply_names(segments: list[dict], known_names: list[str] | None = None) -> l
 
 
 def process(audio_path: str, known_names: list[str] | None = None) -> list[dict]:
-    segments = transcribe(audio_path, known_names=known_names)
+    if USE_MIXED:
+        segments = transcribe_mixed(audio_path, known_names=known_names)
+    else:
+        segments = transcribe(audio_path, known_names=known_names)
     segments = group_speakers(segments)
     segments = apply_names(segments, known_names)
     return segments
@@ -250,3 +253,68 @@ def drop_crosstalk(segments: list[dict], overlap: float = 0.6) -> list[dict]:
             kept.append(seg)
     kept.sort(key=lambda s: s["start"])
     return kept
+
+
+# --- Смешанная речь ------------------------------------------------------------
+# Whisper определяет язык один раз на всю запись. На совещании, где русский
+# и казахский чередуются, это даёт перекос: казахские фразы «переводятся»
+# в похожие русские слова. Поэтому запись прогоняется дважды, а затем по каждой
+# реплике выбирается тот вариант, который действительно на своём языке.
+
+KZ_LETTERS = set("әғқңөұүһі")
+USE_MIXED = os.environ.get("HATTAMA_MIXED", "on").lower() != "off"
+
+
+def kazakh_score(text: str) -> float:
+    """Доля букв, которые есть только в казахском алфавите."""
+    letters = [c for c in text.lower() if c.isalpha()]
+    if not letters:
+        return 0.0
+    return sum(1 for c in letters if c in KZ_LETTERS) / len(letters)
+
+
+def _overlap(a: dict, b: dict) -> float:
+    inter = min(a["end"], b["end"]) - max(a["start"], b["start"])
+    shorter = min(a["end"] - a["start"], b["end"] - b["start"]) or 1
+    return inter / shorter
+
+
+def merge_languages(ru: list[dict], kk: list[dict], threshold: float = 0.04) -> list[dict]:
+    """Склейка двух проходов.
+
+    Берём русский проход за основу: деловая часть совещания обычно на русском.
+    Реплику заменяем казахским вариантом, если в нём есть заметная доля
+    казахских букв, которых в русском проходе не оказалось.
+    """
+    out = []
+    for seg in ru:
+        best = seg
+        for other in kk:
+            if _overlap(seg, other) < 0.5:
+                continue
+            if kazakh_score(other["text"]) > max(threshold, kazakh_score(seg["text"])):
+                best = {**seg, "text": other["text"], "lang": "kk"}
+            break
+        out.append(best)
+
+    # казахские реплики, которых русский проход не услышал вовсе
+    for other in kk:
+        if kazakh_score(other["text"]) <= threshold:
+            continue
+        if any(_overlap(other, s) > 0.5 for s in out):
+            continue
+        out.append({**other, "lang": "kk"})
+
+    out.sort(key=lambda s: s["start"])
+    return out
+
+
+def transcribe_mixed(audio_path: str, known_names: list[str] | None = None) -> list[dict]:
+    """Два прохода: русский и казахский, затем выбор варианта по каждой реплике."""
+    ru = transcribe(audio_path, language="ru", known_names=known_names)
+    kk = transcribe(audio_path, language="kk", known_names=known_names)
+    if not kk:
+        return ru
+    if not ru:
+        return kk
+    return merge_languages(ru, kk)
